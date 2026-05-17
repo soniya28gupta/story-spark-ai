@@ -86,10 +86,9 @@ function App() {
         <Route
           path="/"
           element={
-            <RootLayout>
-              <HeroSectionComponent />
-              <HomeComponent />
-            </RootLayout>
+            <div className="min-h-screen bg-[#0f111a] p-8 text-white">
+              <PostListsComponent />
+            </div>
           }
         />
         <Route
