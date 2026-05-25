@@ -51,7 +51,6 @@ if (!email || !emailRegex.test(email)) {
     { label: "Help Center", to: "/help"       },
     { label: "Community",   to: "/community"  },
     { label: "Guidelines",  to: "/guidelines" },
-    { label: "Report Bug",     to: import.meta.env.VITE_GITHUB_REPO_ISSUES_URL  },
   ];
 
   return (
@@ -168,7 +167,6 @@ if (!email || !emailRegex.test(email)) {
               ))}
             </ul>
           </div>
-
           {/* Newsletter */}
           <div className="col-span-12 md:col-span-3 flex flex-col gap-3.5">
             <h3 className="text-[11.5px] font-bold tracking-[0.22em] uppercase text-white/70">Stay Updated</h3>
@@ -230,20 +228,22 @@ if (!email || !emailRegex.test(email)) {
             <span className="hidden sm:inline text-white/[0.12]">|</span>
             <span className="italic text-slate-400/60">Crafted for storytellers</span>
           </div>
+          
           <div className="flex items-center gap-2.5">
-            {["Privacy", "Terms", "Cookies"].map((item, i, arr) => (
-              <span key={item} className="flex items-center gap-2.5">
-                              <Link
-                to="/privacy-policy"
-                className="text-slate-400/80 transition-colors duration-200 hover:text-blue-300"
-              >
-                Privacy
-              </Link>
-                {i < arr.length - 1 && <span className="text-white/[0.12]">|</span>}
-              </span>
-            ))}
+  {(["Privacy", "Terms", "Cookies"] as const).map((item, i, arr) => (
+    <span key={item} className="flex items-center gap-2.5">
+      <Link
+        to={item === "Privacy" ? "/privacy-policy" : item === "Terms" ? "/terms" : "/cookies"}
+        className="text-slate-400/80 transition-colors duration-200 hover:text-blue-300"
+      >
+        {item}
+      </Link>
+      {i < arr.length - 1 && <span className="text-white/[0.12]">|</span>}
+    </span>
+  ))}
+</div>
           </div>
-        </div>
+        
       </div>
     </footer>
   );
