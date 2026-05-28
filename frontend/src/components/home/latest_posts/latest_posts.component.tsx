@@ -16,6 +16,15 @@ const LatestPostsComponent = () => {
     return Math.max(1, Math.ceil(words / 200));
   };
 
+
+const getReadingTime = (content: string): string => {
+  const words = content.trim().split(/\s+/).length;
+  const minutes = Math.ceil(words / 200);
+  return minutes === 1 ? "1 min read" : `${minutes} min read`;
+};
+
+const LatestPostsComponent = () => {
+  const { data, isLoading } = useGetLatestListsQuery(undefined);
   if (isLoading) {
     return <LoadingAnimation />;
   }
@@ -29,6 +38,8 @@ const LatestPostsComponent = () => {
         {(data?.posts?.length ?? 0) > 0 ? (
     <div className="text-slate-900 dark:text-slate-100">
       <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-6">Latest Posts</h2>
+    <div>
+      <h2 className="text-2xl font-bold text-gray-300 mb-6">Latest Posts</h2>
       <div className="space-y-6">
         {data?.posts?.length ?? 0 > 0 ? (
           data?.posts?.map((post: Post) => (
@@ -90,18 +101,35 @@ const LatestPostsComponent = () => {
                   <span className="flex items-center gap-1">
                     <i className="far fa-heart"></i> {post.likesCount}
               <h3 className="text-xl font-semibold text-slate-900 dark:text-gray-300 mb-2 group-hover:text-blue-400 transition-colors">
+              className="bg-blue-500/10 rounded-lg shadow-sm p-6"
+            >
+              <div className="flex items-center mb-4">
+                <SSProfile name={post.author?.name || 'Unknown User'} size="h-8 w-8" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-400">
+                    {post.author?.name || 'Unknown User'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {formatDateShort(post.createdAt)}
+                  </p>
+                </div>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-300 mb-2">
                 {post.title}
               </h3>
-              <p className="text-slate-600 dark:text-gray-400 mb-4 line-clamp-2">
-                {post.content}
+              <p className="text-gray-400 mb-4">
+                {post.content.slice(0, 170)}...
               </p>
               <div className="flex items-center justify-between">
-                <div className="flex items-center text-sm text-slate-500 dark:text-gray-400">
+                <div className="flex items-center text-sm text-gray-400">
                   <span className="flex items-center mr-4">
                     <i className="far fa-heart mr-1"></i> {post.likesCount}
                   </span>
                   <span className="flex items-center gap-1">
                     <i className="far fa-comment"></i> {post.commentsCount}
+                  </span>
+                  <span className="flex items-center mr-4 bg-blue-500/30 !text-white text-xs font-medium px-2 py-1 rounded-full border border-blue-400/50">
+                    <i className="far fa-clock mr-1"></i> {getReadingTime(post.content)}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -123,6 +151,7 @@ const LatestPostsComponent = () => {
           <div className="rounded-lg border border-slate-200 dark:border-slate-700/70 bg-slate-100 dark:bg-slate-900/40 px-4 py-5 text-slate-700 dark:text-slate-300">
             Post is not available!
           </div>
+          <div>Post is not available!</div>
         )}
       </div>
     </section>

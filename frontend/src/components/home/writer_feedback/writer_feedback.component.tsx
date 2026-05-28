@@ -1,6 +1,7 @@
 import React from "react";
 import { useGetReviewsQuery } from "../../../redux/apis/review.api";
 import { Review } from "../../../models/review";
+import ReviewForm from "./ReviewForm";
 
 const WriterFeedbackComponent = () => {
   const { data: feedbackData = [], isLoading } =
@@ -73,6 +74,7 @@ const WriterFeedbackComponent = () => {
           ))}
         </div>
       </div>
+      <ReviewForm />
     </section>
   );
 };
