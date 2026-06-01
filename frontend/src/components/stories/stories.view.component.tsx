@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import { Document, Packer, Paragraph, TextRun } from "docx";
+import { saveAs } from "file-saver";import React, { useEffect, useState, useRef, useMemo } from "react";
 import { getShortenedText, ITopicData, topicsData, getWordCount, SELECTED_TOPIC_CLASSES } from "./stories.utils";
 import toast, { Toaster } from "react-hot-toast";
 import { useCreatePostMutation, useDeletePostMutation } from "../../redux/apis/post.api";
@@ -249,6 +250,241 @@ const buildSentenceSegments = (content: string): StorySentenceSegment[] => {
   return segments;
 };
 
+const escapeXml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
+const getSafeFileName = (title: string, extension: string): string => {
+  const safeTitle = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `${safeTitle || "story"}.${extension}`;
+};
+
+const crcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let j = 0; j < 8; j += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+const getCrc32 = (bytes: Uint8Array): number => {
+  let crc = 0xffffffff;
+  bytes.forEach((byte) => {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  });
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const getDosDateTime = (date = new Date()): { dosDate: number; dosTime: number } => {
+  const year = Math.max(date.getFullYear(), 1980);
+  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { dosDate, dosTime };
+};
+
+const writeUint16 = (target: number[], value: number) => {
+  target.push(value & 0xff, (value >>> 8) & 0xff);
+};
+
+const writeUint32 = (target: number[], value: number) => {
+  target.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+};
+
+const createZipBlob = (files: { name: string; content: string }[]): Blob => {
+  const encoder = new TextEncoder();
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+  const { dosDate, dosTime } = getDosDateTime();
+
+  files.forEach((file) => {
+    const nameBytes = encoder.encode(file.name);
+    const contentBytes = encoder.encode(file.content);
+    const crc32 = getCrc32(contentBytes);
+
+    const localHeader: number[] = [];
+    writeUint32(localHeader, 0x04034b50);
+    writeUint16(localHeader, 20);
+    writeUint16(localHeader, 0);
+    writeUint16(localHeader, 0);
+    writeUint16(localHeader, dosTime);
+    writeUint16(localHeader, dosDate);
+    writeUint32(localHeader, crc32);
+    writeUint32(localHeader, contentBytes.length);
+    writeUint32(localHeader, contentBytes.length);
+    writeUint16(localHeader, nameBytes.length);
+    writeUint16(localHeader, 0);
+
+    localParts.push(new Uint8Array(localHeader), nameBytes, contentBytes);
+
+    const centralHeader: number[] = [];
+    writeUint32(centralHeader, 0x02014b50);
+    writeUint16(centralHeader, 20);
+    writeUint16(centralHeader, 20);
+    writeUint16(centralHeader, 0);
+    writeUint16(centralHeader, 0);
+    writeUint16(centralHeader, dosTime);
+    writeUint16(centralHeader, dosDate);
+    writeUint32(centralHeader, crc32);
+    writeUint32(centralHeader, contentBytes.length);
+    writeUint32(centralHeader, contentBytes.length);
+    writeUint16(centralHeader, nameBytes.length);
+    writeUint16(centralHeader, 0);
+    writeUint16(centralHeader, 0);
+    writeUint16(centralHeader, 0);
+    writeUint16(centralHeader, 0);
+    writeUint32(centralHeader, 0);
+    writeUint32(centralHeader, offset);
+
+    centralParts.push(new Uint8Array(centralHeader), nameBytes);
+    offset += localHeader.length + nameBytes.length + contentBytes.length;
+  });
+
+  const centralDirectorySize = centralParts.reduce((size, part) => size + part.length, 0);
+  const endRecord: number[] = [];
+  writeUint32(endRecord, 0x06054b50);
+  writeUint16(endRecord, 0);
+  writeUint16(endRecord, 0);
+  writeUint16(endRecord, files.length);
+  writeUint16(endRecord, files.length);
+  writeUint32(endRecord, centralDirectorySize);
+  writeUint32(endRecord, offset);
+  writeUint16(endRecord, 0);
+
+  return new Blob([...localParts, ...centralParts, new Uint8Array(endRecord)], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+};
+
+const createDocxBlob = ({
+  title,
+  content,
+  tag,
+  author,
+}: {
+  title: string;
+  content: string;
+  tag: string;
+  author: string;
+}): Blob => {
+  const createdAt = new Date().toISOString();
+  const paragraphs = content
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map(
+      (paragraph) =>
+        `<w:p><w:pPr><w:spacing w:after="180" w:line="360" w:lineRule="auto"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(paragraph)}</w:t></w:r></w:p>`
+    )
+    .join("");
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:pPr><w:pStyle w:val="Title"/></w:pPr>
+      <w:r><w:t>${escapeXml(title)}</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:spacing w:after="240"/></w:pPr>
+      <w:r><w:rPr><w:b/><w:color w:val="6366F1"/></w:rPr><w:t>${escapeXml(tag.toUpperCase())}</w:t></w:r>
+    </w:p>
+    ${paragraphs}
+    <w:sectPr>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`;
+
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+    <w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Title">
+    <w:name w:val="Title"/>
+    <w:rPr><w:b/><w:sz w:val="44"/><w:szCs w:val="44"/><w:color w:val="1E293B"/></w:rPr>
+    <w:pPr><w:spacing w:after="240"/></w:pPr>
+  </w:style>
+</w:styles>`;
+
+  return createZipBlob([
+    {
+      name: "[Content_Types].xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`,
+    },
+    {
+      name: "_rels/.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`,
+    },
+    {
+      name: "word/_rels/document.xml.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+    },
+    { name: "word/document.xml", content: documentXml },
+    { name: "word/styles.xml", content: stylesXml },
+    {
+      name: "docProps/core.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>${escapeXml(title)}</dc:title>
+  <dc:creator>${escapeXml(author)}</dc:creator>
+  <dc:subject>${escapeXml(tag)}</dc:subject>
+  <cp:keywords>StorySparkAI,story,export</cp:keywords>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${createdAt}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${createdAt}</dcterms:modified>
+</cp:coreProperties>`,
+    },
+    {
+      name: "docProps/app.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>StorySparkAI</Application>
+</Properties>`,
+    },
+  ]);
+};
+
+const downloadBlob = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", fileName);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
   stories,
   isLogin,
@@ -430,6 +666,7 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
 
   const handleExportPDF = async () => {
     if (!selectedStory) { toast.error("No story available to export."); return; }
+    if (!selectedStory.content?.trim()) {toast.error("Story content is empty. Cannot export.");return;}
     const toastId = toast.loading("Preparing your premium PDF...");
     try {
       const loadImageWithTimeout = (src: string, timeoutMs: number = 3000): Promise<HTMLImageElement> => {
@@ -528,6 +765,7 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
 
   const handleExportMarkdown = () => {
     if (!selectedStory) { toast.error("No story available to export."); return; }
+    if (!selectedStory.content?.trim()) {toast.error("Story content is empty. Cannot export.");return;}
     try {
       const title = selectedStory.title || "Story";
       const content = selectedStory.content || "";
@@ -536,14 +774,28 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
       const isoDate = new Date().toISOString().split("T")[0];
       const markdownContent = `---\ntitle: "${title.replace(/"/g, '\\"')}"\ntag: "${tag.replace(/"/g, '\\"')}"\nauthor: "${authorName.replace(/"/g, '\\"')}"\ndate: "${isoDate}"\n---\n\n# ${title}\n\n${content}\n`;
       const blob = new Blob([markdownContent], { type: "text/markdown;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "story"}.md`);
-      document.body.appendChild(link); link.click();
-      document.body.removeChild(link); URL.revokeObjectURL(url);
+      downloadBlob(blob, getSafeFileName(title, "md"));
       toast.success("Markdown downloaded!");
     } catch (error) { console.error(error); toast.error("Failed to export Markdown."); }
+  };
+
+  const handleExportDOCX = () => {
+    if (!selectedStory) { toast.error("No story available to export."); return; }
+    if (!selectedStory.content?.trim()) {toast.error("Story content is empty. Cannot export.");return;}
+    try {
+      const title = selectedStory.title || "Untitled Story";
+      const docxBlob = createDocxBlob({
+        title,
+        content: selectedStory.content || "",
+        tag: selectedStory.tag || "Story",
+        author: isLogin && profile?.name ? profile.name : "Anonymous",
+      });
+      downloadBlob(docxBlob, getSafeFileName(title, "docx"));
+      toast.success("DOCX downloaded!");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to export DOCX.");
+    }
   };
 
   const handelPublishStory = async () => {
@@ -653,6 +905,9 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
                 </button>
                 <button type="button" className="rounded-lg px-4 py-2 bg-purple-700 text-slate-200 font-semibold cursor-pointer hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleExportPDF} disabled={!selectedStory}>
                   📄 Export PDF
+                </button>
+                <button type="button" className="rounded-lg px-4 py-2 bg-teal-700 text-slate-200 font-semibold cursor-pointer hover:bg-teal-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleExportDOCX} disabled={!selectedStory}>
+                  📝 Export DOCX
                 </button>
                 <button type="button" className="rounded-lg px-4 py-2 bg-indigo-700 text-slate-200 font-semibold cursor-pointer hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleExportMarkdown} disabled={!selectedStory}>
                   ⬇️ Export Markdown
