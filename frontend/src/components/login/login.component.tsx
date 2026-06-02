@@ -1,4 +1,6 @@
 import { useForm, SubmitHandler } from "react-hook-form";
+import { Link } from "react-router-dom";
+import { useState } from "react";
 import SSInput from "../ui-component/ss-input/ss-input";
 import SSButton from "../ui-component/ss-button/ss-button";
 import { useState } from "react";
@@ -12,6 +14,7 @@ import { USER_ROLE } from "../../constants/role";
 import RedirectComponent from "../redirect.component";
 import toast, { Toaster } from "react-hot-toast";
 import { GoogleLogin, CredentialResponse } from "@react-oauth/google";
+import { WandSparkles, BookOpen, UsersRound } from "lucide-react";
 
 type Inputs = {
   email: string;
@@ -33,23 +36,15 @@ const LoginComponent = () => {
 
   const onSubmit: SubmitHandler<Inputs> = async (data) => {
     setIsBusy(true);
-
     try {
       const res = await loginUser({ ...data }).unwrap();
-
       if (res.data.accessToken) {
         toast.success("User logged in successfully!");
-
-        storeUserInfo({
-          accessToken: res.data.accessToken,
-        });
-
+        storeUserInfo({ accessToken: res.data.accessToken });
         setIsLoggedIn(true);
       }
     } catch {
-      toast.error(
-        "Login failed. Please check your credentials."
-      );
+      toast.error("Login failed. Please check your credentials.");
     } finally {
       setIsBusy(false);
     }
@@ -59,60 +54,42 @@ const LoginComponent = () => {
     credentialResponse: CredentialResponse
   ) => {
     setIsBusy(true);
-
     try {
       const res = await googleLogin({
         token: credentialResponse.credential,
       }).unwrap();
-
       if (res.data.accessToken) {
-        toast.success(
-          "User logged in successfully with Google!"
-        );
-
+        toast.success("User logged in successfully with Google!");
         storeUserInfo({
           accessToken: res.data.accessToken,
         });
-
         setIsLoggedIn(true);
       }
     } catch {
-      toast.error(
-        "Failed to login with Google. Please try again."
-      );
+      toast.error("Failed to login with Google. Please try again.");
     } finally {
       setIsBusy(false);
     }
   };
 
   const handleGoogleLoginError = () => {
-    toast.error(
-      "Google login failed. Please try again."
-    );
+    toast.error("Google login failed. Please try again.");
   };
 
-  // Role-based redirect fix
   if (isLoggedIn) {
     const userInfo = getUserInfo();
-
     const isDashboardUser =
       userInfo?.role === USER_ROLE.ADMIN ||
       userInfo?.role === USER_ROLE.SUPER_ADMIN;
-
     return (
       <RedirectComponent
-        defaultPath={
-          isDashboardUser
-            ? "/dashboard"
-            : "/explore"
-        }
+        defaultPath={isDashboardUser ? "/dashboard" : "/explore"}
       />
     );
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex items-center justify-center relative overflow-hidden px-4">
-
+    <div className="min-h-screen bg-white dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex items-center justify-center relative overflow-hidden px-4 box-border">
       {/* Background Glow */}
       <motion.div 
         initial={{ opacity: 0, scale: 0.8 }}
@@ -135,11 +112,13 @@ const LoginComponent = () => {
         className="flex w-full max-w-md flex-col justify-center py-12 relative z-10 px-4"
       >
 
-        <div className="sm:mx-auto sm:w-full sm:max-w-md mb-8">
-          <h2 className="text-center text-4xl sm:text-5xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400 drop-shadow-sm">
-            STORY SPARK AI
-          </h2>
-        </div>
+          <div className="flex justify-center items-center gap-6 border border-gray-300 rounded-2xl p-4 bg-slate-50 dark:bg-slate-800 dark:text-gray-400">
+            <WandSparkles className="text-violet-600 shrink-0" />
+            <div>
+              <h2 className="font-bold">Smart writing</h2>
+              <p>AI that understands your ideas</p>
+            </div>
+          </div>
 
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
@@ -155,15 +134,33 @@ const LoginComponent = () => {
             ← Back to Home
             </button>
 
-          <h3 className="mb-6 text-center text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-200">
-            Welcome Back
-          </h3>
+          <div className="border border-gray-300 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 dark:text-gray-400 text-sm">
+            Create, edit, and generate engaging multiple story variations from a
+            single prompt. Perfect for writers, creators, and enthusiasts
+            exploring the future of fiction.
+          </div>
+        </div>
 
-          <form
-            className="space-y-5 w-full min-w-0 overflow-hidden"
-            onSubmit={handleSubmit(onSubmit)}
+        {/* Right side — login form card */}
+        <div className="w-full max-w-md bg-slate-50 dark:bg-slate-800/60 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 rounded-2xl p-8 sm:p-10 shadow-2xl">
+          {/* Back to Home */}
+          <button
+            onClick={() => (window.location.href = "/")}
+            className="mb-4 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200 flex items-center gap-2 cursor-pointer"
           >
+            ← Back to Home
+          </button>
 
+          <div className="mb-6 text-center">
+            <h2 className="text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">
+              Welcome back
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Sign in to your Story Spark AI account
+            </p>
+          </div>
+
+          <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
             <SSInput
               label="Email address"
               name="email"
@@ -174,8 +171,10 @@ const LoginComponent = () => {
               register={register}
               validation={{ required: "Email is required" }}
               error={errors.email}
-            />
+              autoComplete="email"
+              />
 
+            {/* Password field — eye icon toggle is provided by SSInput when type="password" */}
             <SSInput
               label="Password"
               name="password"
@@ -186,41 +185,33 @@ const LoginComponent = () => {
               register={register}
               validation={{ required: "Password is required" }}
               error={errors.password}
+              autoComplete="password"
             />
 
             <div className="flex justify-end -mt-2">
-              <a
-                href="/forgot-password"
+              <Link
+                to="/forgot-password"
                 className="text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors duration-200"
               >
                 Forgot Password?
-              </a>
+              </Link>
             </div>
 
-            <SSButton
-              text="Sign In"
-              type="submit"
-              isLoading={isBusy}
-            />
-
+            <SSButton text="Sign In" type="submit" isLoading={isBusy} />
           </form>
 
-          <div className="mt-6 relative">
-
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200"></div>
+          <div className="mt-6 relative w-full">
+            <div className="absolute inset-0 flex items-center w-full">
+              <div className="w-full border-t border-slate-200 dark:border-slate-700" />
             </div>
-
-            <div className="relative flex justify-center text-sm">
+            <div className="relative flex justify-center text-sm w-full">
               <span className="px-4 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
                 OR
               </span>
             </div>
-
           </div>
 
-          {/* Explicitly added list-none to prevent stray bullet point artifact on production build */}
-          <div className="mt-6 flex justify-center list-none">
+          <div className="mt-6 flex justify-center list-none w-full">
             <GoogleLogin
               onSuccess={handleGoogleLoginSuccess}
               onError={handleGoogleLoginError}
@@ -228,26 +219,19 @@ const LoginComponent = () => {
           </div>
 
           <p className="mt-8 text-center text-sm text-slate-500 dark:text-slate-400">
-
-            Don't have an account?{" "}
-
-            <a
-              href="/signup"
+            Don&apos;t have an account?{" "}
+            <Link
+              to="/signup"
               className="font-semibold text-blue-400 hover:text-blue-300 transition-colors duration-200"
             >
               Sign up for free
-            </a>
-
+            </Link>
           </p>
 
         </motion.div>
       </motion.div>
 
-      <Toaster
-        position="top-right"
-        reverseOrder={false}
-      />
-
+      <Toaster position="top-right" reverseOrder={false} />
     </div>
   );
 };
