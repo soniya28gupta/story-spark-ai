@@ -3,6 +3,7 @@ import DOMPurify from "dompurify";
 import { getShortenedText, ITopicData, topicsData, getWordCount, SELECTED_TOPIC_CLASSES } from "./stories.utils";
 import { formatReadingStats } from "../../utils/story-utils";
 import toast, { Toaster } from "react-hot-toast";
+import { useAntiGravityScroll } from "../../hooks/useAntiGravityScroll";
 import { useCreatePostMutation, useDeletePostMutation } from "../../redux/apis/post.api";
 import { useGetProfileInfoQuery } from "../../redux/apis/user.api";
 import jsPDF from "jspdf";
@@ -430,6 +431,14 @@ const StoriesViewComponent: React.FC<StoriesComponentProps> = ({
   const location = useLocation();
   const audioPlayerRef = useRef<AudioPlayerHandle>(null);
   const dispatch = useDispatch();
+
+  const storyScrollContainerRef = useRef<HTMLDivElement>(null);
+  const {
+    isPlaying: isAntiGravityPlaying,
+    setIsPlaying: setIsAntiGravityPlaying,
+    targetSpeed: antiGravitySpeed,
+    setTargetSpeed: setAntiGravitySpeed,
+  } = useAntiGravityScroll(storyScrollContainerRef);
 
 
   const location = useLocation();
@@ -2261,7 +2270,57 @@ if (isLoading) {
                           </div>
                           
                           <div className="space-y-4">
-                            <div className="bg-slate-950/60 p-5 rounded-xl border border-slate-800 leading-relaxed text-slate-300 text-sm md:text-base italic shadow-inner whitespace-pre-wrap">
+                            {/* Glassmorphic Anti-Gravity Scroll Control Panel Dock */}
+                            <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-4 shadow-xl select-none">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-extrabold uppercase tracking-widest bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400">
+                                  Anti-Gravity Engine
+                                </span>
+                                <span className="text-[9px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-1.5 py-0.5 rounded-full font-bold uppercase">
+                                  {isAntiGravityPlaying ? "Active" : "Idle"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-4 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    Speed: {antiGravitySpeed.toFixed(1)}x
+                                  </span>
+                                  <input
+                                    type="range"
+                                    min="0.5"
+                                    max="5.0"
+                                    step="0.1"
+                                    value={antiGravitySpeed}
+                                    onChange={(e) => setAntiGravitySpeed(parseFloat(e.target.value))}
+                                    disabled={!isAntiGravityPlaying}
+                                    className="w-24 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsAntiGravityPlaying(!isAntiGravityPlaying)}
+                                  className={`px-3.5 py-2 rounded-lg font-bold text-[10px] uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+                                    isAntiGravityPlaying
+                                      ? "bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 active:scale-95"
+                                      : "bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-md shadow-indigo-500/20 border border-indigo-500/30 active:scale-95"
+                                  }`}
+                                >
+                                  {isAntiGravityPlaying ? (
+                                    <>
+                                      <i className="fa-solid fa-pause text-[9px] animate-pulse" />
+                                      <span>Pause Engine</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <i className="fa-solid fa-play text-[9px]" />
+                                      <span>Engage Scroll</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div ref={storyScrollContainerRef} className="bg-slate-950/60 p-5 rounded-xl border border-slate-800 leading-relaxed text-slate-300 text-sm md:text-base italic shadow-inner whitespace-pre-wrap max-h-[520px] overflow-y-auto">
                               <p>{currentEndingData.ending}</p>
                             </div>
                             
